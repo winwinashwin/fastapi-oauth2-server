@@ -1,289 +1,191 @@
-# How to create an OAuth 2.0 Provider
+# FastAPI OAuth 2.0 and OpenID Connect example
 
-This is an example of OAuth 2.0 server in [Authlib](https://authlib.org/).
-If you are looking for old Flask-OAuthlib implementation, check the
-`flask-oauthlib` branch.
+A deliberately small authorization server built with FastAPI, Authlib, SQLAlchemy, and PyJWT. It demonstrates secure OAuth 2.0 authorization-code and client-credentials flows, plus OpenID Connect Core for browser sign-in.
 
-- Documentation: <https://docs.authlib.org/en/latest/flask/2/>
-- Authlib Repo: <https://github.com/lepture/authlib>
+This is an educational example, not a production-ready identity provider. In particular, users authenticate with a dummy password (`valid`), clients are created through a local HTML page, and schema creation is automatic.
 
-## Sponsors
+## Features
 
-<table>
-  <tr>
-    <td><img align="middle" width="48" src="https://user-images.githubusercontent.com/290496/39297078-89d00928-497d-11e8-8119-0c53afe14cd0.png"></td>
-    <td>If you want to quickly add secure token-based authentication to Python projects, feel free to check Auth0's Python SDK and free plan at <a href="https://auth0.com/overview?utm_source=GHsponsor&utm_medium=GHsponsor&utm_campaign=example-oauth2-server">auth0.com/overview</a>.</td>
-  </tr>
-</table>
+- OAuth 2.0 authorization-code grant with required PKCE S256.
+- Refresh-token rotation and revocation.
+- Client-credentials grant for the `machine:read` scope.
+- OpenID Connect authorization-code flow with required `nonce`, RS256 ID Tokens, discovery, JWKS, and UserInfo.
+- Exact redirect URI matching, one-time authorization codes, and short code lifetime.
+- OAuth error handling and black-box security regression tests.
 
-## Take a quick look
+Unsupported flows include implicit and resource-owner-password grants. Dynamic client registration and OIDC logout are also out of scope.
 
-This is a ready to run example, let's take a quick experience at first. To
-run the example, we need to install all the dependencies:
+## Requirements
 
-```bash
-$ uv sync
-```
+- Python 3.11 or later
+- `uv`
+- An RSA private key for OpenID Connect signing
 
-Set Flask and Authlib environment variables:
+Install the project:
 
 ```bash
-# disable check https (DO NOT SET THIS IN PRODUCTION)
-$ export AUTHLIB_INSECURE_TRANSPORT=1
+uv sync
 ```
 
-Create Database and run the development server:
+## Configuration
+
+The application reads environment variables and also supports a `.env` file.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `SECRET_KEY` | Yes | Signs browser sessions and internal OAuth access/refresh JWTs. Use a long random value. |
+| `SQLALCHEMY_DATABASE_URI` | Yes | SQLAlchemy database URL, for example `sqlite:///oauth.sqlite`. |
+| `OIDC_ISSUER` | Yes | Canonical external issuer URL, such as `https://id.example.com`. It becomes the ID Token `iss` claim and discovery `issuer`. |
+| `OIDC_PRIVATE_KEY_PEM` | Yes | PEM-encoded RSA private key used to sign RS256 ID Tokens. |
+| `OIDC_KEY_ID` | Yes | Stable key identifier (`kid`) published in JWKS and ID Token headers. |
+
+For local development, create a key and export the configuration:
 
 ```bash
-$ uv run flask run
+openssl genrsa -out oidc-private.pem 2048
+
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export SQLALCHEMY_DATABASE_URI="sqlite:///oauth.sqlite"
+export OIDC_ISSUER="http://127.0.0.1:8000"
+export OIDC_PRIVATE_KEY_PEM="$(cat oidc-private.pem)"
+export OIDC_KEY_ID="local-rs256-1"
 ```
 
-Now, you can open your browser with `http://127.0.0.1:5000/`, login with any
-name you want.
+Use an HTTPS issuer and protect the private key in every non-local environment. Do not commit the `.env` file or signing key.
 
-Before testing, we need to create a client:
-
-![create a client](https://user-images.githubusercontent.com/290496/38811988-081814d4-41c6-11e8-88e1-cb6c25a6f82e.png)
-
-### Password flow example
-
-Get your `client_id` and `client_secret` for testing. In this example, we
-have enabled `password` grant types, let's try:
-
-```
-$ curl -u ${client_id}:${client_secret} -XPOST http://127.0.0.1:5000/oauth/token -F grant_type=password -F username=${username} -F password=valid -F scope=profile
-```
-
-Because this is an example, every user's password is `valid`. Now you can access `/api/me`:
+## Run the server
 
 ```bash
-$ curl -H "Authorization: Bearer ${access_token}" http://127.0.0.1:5000/api/me
+uv run uvicorn app:app --reload
 ```
 
-### Authorization code flow example
+On startup the application creates its database tables. Open <http://127.0.0.1:8000/> to create a local user and OAuth client. The example's password flow is intentionally absent; entering a username through the page creates and signs in that user.
 
-To test the authorization code flow, you can just open this URL in your browser.
+When creating a client, configure the grants, response types, scopes, redirect URIs, and token endpoint authentication method. Use one redirect URI per line. The UI displays the generated client ID and secret after registration.
+
+## Endpoints
+
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/oauth/authorize` | GET, POST | User authorization and consent |
+| `/oauth/token` | POST | Token exchange and client-credentials tokens |
+| `/oauth/revoke` | POST | OAuth token revocation |
+| `/.well-known/openid-configuration` | GET | OIDC discovery document |
+| `/oauth/jwks` | GET | RS256 public signing key set |
+| `/oauth/userinfo` | GET | OIDC UserInfo claims |
+| `/whoami` | GET | Example user resource; requires `user:read` |
+| `/machine/whoami` | GET | Example machine resource; requires `machine:read` |
+
+## OAuth 2.0 authorization-code flow
+
+Register a client with:
+
+- grant types: `authorization_code` and, if needed, `refresh_token`
+- response type: `code`
+- scope: `user:read` (and OIDC scopes when applicable)
+- an exact HTTPS callback URL
+
+Generate a PKCE verifier and S256 challenge, then send the user to the authorization endpoint. The user must be signed into this example server and approve the consent page.
+
+```text
+GET /oauth/authorize?
+  response_type=code&
+  client_id=CLIENT_ID&
+  redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&
+  scope=user%3Aread&
+  state=opaque-client-state&
+  code_challenge=BASE64URL_SHA256_VERIFIER&
+  code_challenge_method=S256
+```
+
+The server redirects to the registered URI with `code` and the unchanged `state`. Exchange the code using client authentication and the original verifier:
+
 ```bash
-$ open http://127.0.0.1:5000/oauth/authorize?response_type=code&client_id=${client_id}&scope=profile
+curl --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode grant_type=authorization_code \
+  --data-urlencode code="$CODE" \
+  --data-urlencode redirect_uri="https://client.example/callback" \
+  --data-urlencode code_verifier="$CODE_VERIFIER" \
+  http://127.0.0.1:8000/oauth/token
 ```
 
-After granting the authorization, you should be redirected to `${redirect_uri}/?code=${code}`
+Authorization codes are single-use, bound to the client, exact redirect URI, and verifier, and expire shortly after issuance.
 
-Then your app can send the code to the authorization server to get an access token:
+## OpenID Connect
+
+OIDC uses the authorization-code flow above. Register `openid` in the client's permitted scopes, include `openid` in the authorization request, and supply exactly one `nonce`:
+
+```text
+scope=openid%20profile&nonce=random-rp-nonce
+```
+
+The token response includes an `id_token` signed with RS256. Relying parties should:
+
+1. Fetch discovery from `/.well-known/openid-configuration`.
+2. Fetch the signing key from `jwks_uri` and select the key matching the JWT `kid`.
+3. Verify RS256 signature, `iss`, `aud`, `exp`, `iat`, and the original `nonce`.
+
+The ID Token always contains `iss`, `sub`, `aud`, `exp`, `iat`, `auth_time`, `nonce`, and `jti`. When `profile` is granted, it also contains `preferred_username`.
+
+Call UserInfo with the OAuth access token, not an ID or refresh token:
 
 ```bash
-$ curl -u ${client_id}:${client_secret} -XPOST http://127.0.0.1:5000/oauth/token -F grant_type=authorization_code -F scope=profile -F code=${code}
+curl -H "Authorization: Bearer $ACCESS_TOKEN" \
+  http://127.0.0.1:8000/oauth/userinfo
 ```
 
-Now you can access `/api/me`:
+UserInfo requires the `openid` scope. It returns `sub` and adds `preferred_username` when `profile` is present.
+
+## Client credentials
+
+Register a client with grant type `client_credentials` and scope `machine:read`, then request a machine token:
 
 ```bash
-$ curl -H "Authorization: Bearer ${access_token}" http://127.0.0.1:5000/api/me
+curl --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode grant_type=client_credentials \
+  --data-urlencode scope=machine:read \
+  http://127.0.0.1:8000/oauth/token
 ```
 
-For now, you can read the source in example or follow the long boring tutorial below.
+Use the resulting access token with the machine resource:
 
-**IMPORTANT**: To test implicit grant, you need to `token_endpoint_auth_method` to `none`.
-
-## Preparation
-
-Assume this example doesn't exist at all. Let's write an OAuth 2.0 server
-from scratch step by step.
-
-### Create folder structure
-
-Here is our Flask website structure:
-
-```
-app.py         --- FLASK_APP
-website/
-  app.py       --- Flask App Factory
-  __init__.py  --- module initialization (empty)
-  models.py    --- SQLAlchemy Models
-  oauth2.py    --- OAuth 2.0 Provider Configuration
-  routes.py    --- Routes views
-  templates/
+```bash
+curl -H "Authorization: Bearer $ACCESS_TOKEN" \
+  http://127.0.0.1:8000/machine/whoami
 ```
 
-### Installation
+Machine tokens cannot access `/whoami` or `/oauth/userinfo`.
 
-Create a virtualenv and install all the requirements. You can also put the
-dependencies into `requirements.txt`:
+## Refresh and revocation
 
-```
-Flask
-Flask-SQLAlchemy
-Authlib
-```
+Clients registered for `refresh_token` receive a refresh token from the authorization-code exchange. Refreshing returns a replacement refresh token and invalidates the predecessor:
 
-### Hello World!
-
-Create a home route view to say "Hello World!". It is used to test if things
-working well.
-
-
-```python
-# website/routes.py
-from flask import Blueprint
-
-bp = Blueprint(__name__, "home")
-
-
-@bp.route("/")
-def home():
-    return "Hello World!"
+```bash
+curl --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode grant_type=refresh_token \
+  --data-urlencode refresh_token="$REFRESH_TOKEN" \
+  http://127.0.0.1:8000/oauth/token
 ```
 
-```python
-# website/app.py
-from flask import Flask
-from .routes import bp
+Revoke a token with the owning client credentials:
 
-
-def create_app(config=None):
-    app = Flask(__name__)
-    # load app specified configuration
-    if config is not None:
-        if isinstance(config, dict):
-            app.config.update(config)
-        elif config.endswith(".py"):
-            app.config.from_pyfile(config)
-    setup_app(app)
-    return app
-
-
-def setup_app(app):
-    app.register_blueprint(bp, url_prefix="")
+```bash
+curl --user "$CLIENT_ID:$CLIENT_SECRET" \
+  --data-urlencode token="$REFRESH_TOKEN" \
+  --data-urlencode token_type_hint=refresh_token \
+  http://127.0.0.1:8000/oauth/revoke
 ```
 
-```python
-# app.py
-from website.app import create_app
+## Testing
 
-app = create_app(
-    {
-        "SECRET_KEY": "secret",
-    }
-)
+The suite drives the public HTML registration and consent flow, then treats the server as an HTTP black box:
+
+```bash
+uv run pytest .
 ```
 
-Create an empty ```__init__.py``` file in the ```website``` folder.
+It covers authorization-code binding and replay, PKCE, redirect URI matching, OAuth parameter safety, client authentication, refresh/revocation, machine access, and the OIDC discovery, nonce, ID Token, JWKS, and UserInfo contracts.
 
-The "Hello World!" example should run properly:
+## Production notes
 
-    $ FLASK_APP=app.py flask run
-
-## Define Models
-
-We will use SQLAlchemy and SQLite for our models. You can also use other
-databases and other ORM engines. Authlib has some built-in SQLAlchemy mixins
-which will make it easier for creating models.
-
-Let's create the models in `website/models.py`. We need four models, which are
-
-- User: you need a user to test and create your application
-- OAuth2Client: the oauth client model
-- OAuth2AuthorizationCode: for `grant_type=code` flow
-- OAuth2Token: save the `access_token` in this model.
-
-Check how to define these models in `website/models.py`.
-
-Once you've created your own `website/models.py` (or copied our version), you'll need to import the database object `db`. Add the line `from .models import db` just after `from flask import Flask` in your scratch-built version of `website/app.py`.
-
-To initialize the database upon startup, if no tables exist, you'll add a few lines to the `setup_app()` function in `website/app.py` so that it now looks like:
-
-```python
-def setup_app(app):
-    # Create tables if they do not exist already
-    @app.before_first_request
-    def create_tables():
-        db.create_all()
-
-    db.init_app(app)
-    app.register_blueprint(bp, url_prefix="")
-```
-
-You can try running the app again as above to make sure it works.
-
-## Implement Grants
-
-The source code is in `website/oauth2.py`. There are four standard grant types:
-
-- Authorization Code Grant
-- Implicit Grant
-- Client Credentials Grant
-- Resource Owner Password Credentials Grant
-
-And Refresh Token is implemented as a Grant in Authlib. You don't have to do
-anything on Implicit and Client Credentials grants, but there are missing
-methods to be implemented in other grants. Check out the source code in
-`website/oauth2.py`.
-
-Once you've created your own `website/oauth2.py`, import the oauth2 config object from the oauth2 module. Add the line `from .oauth2 import config_oauth` just after the import you added above in your scratch-built version of `website/app.py`.
-
-To initialize the oauth object, add `config_oauth(app)` to the `setup_app()` function, just before the line that starts with `app.register_blueprint` so it looks like:
-
-```python
-def setup_app(app):
-    # Create tables if they do not exist already
-    @app.before_first_request
-    def create_tables():
-        db.create_all()
-
-    db.init_app(app)
-    config_oauth(app)
-    app.register_blueprint(bp, url_prefix="")
-```
-You can try running the app again as above to make sure it still works.
-
-## `@require_oauth`
-
-Authlib has provided a `ResourceProtector` for you to create the decorator
-`@require_oauth`, which can be easily implemented:
-
-```py
-from authlib.flask.oauth2 import ResourceProtector
-
-require_oauth = ResourceProtector()
-```
-
-For now, only Bearer Token is supported. Let's add bearer token validator to
-this ResourceProtector:
-
-```py
-from authlib.flask.oauth2.sqla import create_bearer_token_validator
-
-# helper function: create_bearer_token_validator
-bearer_cls = create_bearer_token_validator(db.session, OAuth2Token)
-require_oauth.register_token_validator(bearer_cls())
-```
-
-Check the full implementation in `website/oauth2.py`.
-
-
-## OAuth Routes
-
-For OAuth server itself, we only need to implement routes for authentication,
-and issuing tokens. Since we have added token revocation feature, we need a
-route for revoking too.
-
-Checkout these routes in `website/routes.py`. Their path begin with `/oauth/`.
-
-
-## Other Routes
-
-But that is not enough. In this demo, you will need to have some web pages to
-create and manage your OAuth clients. Check that `/create_client` route.
-
-And we have an API route for testing. Check the code of `/api/me`.
-
-
-## Finish
-
-Here you go. You've got an OAuth 2.0 server.
-
-Read more information on <https://docs.authlib.org/>.
-
-## License
-
-Same license with [Authlib](https://authlib.org/plans).
+This repository intentionally omits many concerns required for a real authorization server: hardened user authentication and password storage, CSRF protections around account management, consent persistence, audit logging, key rotation, migrations, rate limiting, secure cookie deployment settings, monitoring, and operational key management. Treat it as a learning and test fixture rather than an identity service to deploy.
