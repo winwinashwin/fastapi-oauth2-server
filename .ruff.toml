@@ -81,3 +81,6 @@ case-sensitive = true
 
 [lint.flake8-type-checking]
 exempt-modules = ["typing", "typing_extensions"]
+
+[lint.per-file-ignores]
+"tests/*" = ["ANN201", "PLC0415", "S101"]

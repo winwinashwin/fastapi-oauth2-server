@@ -1,0 +1,23 @@
+{
+  "editor.rulers": [110, 120],
+  "explorer.excludeGitIgnore": true,
+  "files.watcherExclude": {
+    "**/venv*/**": true,
+    "**/build/**": true,
+    "**/dist/**": true,
+    "**/instance/**": true,
+    "**/.eggs/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.cache/**": true,
+    "**/__pycache__/**": true,
+    "**/*.pyc": true,
+    "**/.git/**": true,
+    "**/node_modules": true,
+    "**/corridor_app/ui/*": true
+  },
+  "search.useIgnoreFiles": true,
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true
+  }
+}

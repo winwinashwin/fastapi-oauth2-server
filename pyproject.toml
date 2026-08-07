@@ -3,8 +3,21 @@ name = "fastapi-oauth2-server"
 version = "0.1.0"
 description = "Example FastAPI OAuth 2 Server w/ Authlib."
 readme = "README.md"
-requires-python = ">=3.10"
-dependencies = ["authlib>=1.6.5", "flask>=3.1.2", "flask-SQLAlchemy>=3.1.1"]
+requires-python = ">=3.11"
+dependencies = [
+    "authlib",
+    "fastapi[standard]",
+    "uvicorn[standard]",
+    "starlette[full]",
+    "pydantic-settings",
+    "pyjwt",
+    "anyio>=4",
+    "SQLAlchemy>=2",
+]
 
 [dependency-groups]
-dev = ["prek", "ruff"]
+dev = ["prek", "ruff", "pytest", "httpx2"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+anyio_mode = "auto"
