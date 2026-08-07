@@ -1,47 +1,90 @@
-<style>
-  label,
-  label > span {
-    display: block;
-  }
-  label {
-    margin: 15px 0;
-  }
-</style>
+{% extends "base.html" %} {% block title %}Create client · OAuth Server{%
+endblock %} {% block content %}
+<section class="card">
+  <p class="eyebrow">Application registration</p>
+  <h1>Create an OAuth client</h1>
+  <p class="muted">
+    Choose the grants, scopes, and callback addresses your application may use.
+  </p>
 
-<a href="/">Home</a>
-
-<form action="" method="post">
-  <label>
-    <span>Client Name</span>
-    <input type="text" name="client_name" />
-  </label>
-  <label>
-    <span>Client URI</span>
-    <input type="url" name="client_uri" />
-  </label>
-  <label>
-    <span>Allowed Scope</span>
-    <input type="text" name="scope" />
-  </label>
-  <label>
-    <span>Redirect URIs</span>
-    <textarea name="redirect_uri" cols="30" rows="10"></textarea>
-  </label>
-  <label>
-    <span>Allowed Grant Types</span>
-    <textarea name="grant_type" cols="30" rows="10"></textarea>
-  </label>
-  <label>
-    <span>Allowed Response Types</span>
-    <textarea name="response_type" cols="30" rows="10"></textarea>
-  </label>
-  <label>
-    <span>Token Endpoint Auth Method</span>
-    <select name="token_endpoint_auth_method">
-      <option value="client_secret_basic">client_secret_basic</option>
-      <option value="client_secret_post">client_secret_post</option>
-      <option value="none">none</option>
-    </select>
-  </label>
-  <button>Submit</button>
-</form>
+  <form action="" method="post" class="form-grid">
+    <div class="field">
+      <label for="client_name">Client name</label>
+      <input
+        id="client_name"
+        type="text"
+        name="client_name"
+        required
+        autofocus
+      />
+    </div>
+    <div class="field">
+      <label for="client_uri">Client URI</label>
+      <input
+        id="client_uri"
+        type="url"
+        name="client_uri"
+        placeholder="https://client.example"
+        required
+      />
+    </div>
+    <div class="field">
+      <label for="scope">Allowed scopes</label>
+      <input
+        id="scope"
+        type="text"
+        name="scope"
+        placeholder="openid profile user:read"
+        required
+      />
+      <span class="hint">Separate scopes with spaces.</span>
+    </div>
+    <div class="field">
+      <label for="redirect_uri">Redirect URIs</label>
+      <textarea
+        id="redirect_uri"
+        name="redirect_uri"
+        placeholder="https://client.example/callback"
+      ></textarea>
+      <span class="hint"
+        >One exact URI per line. Leave empty for machine-only clients.</span
+      >
+    </div>
+    <div class="field">
+      <label for="grant_type">Allowed grant types</label>
+      <textarea
+        id="grant_type"
+        name="grant_type"
+        placeholder="authorization_code&#10;refresh_token"
+        required
+      ></textarea>
+      <span class="hint">One grant type per line.</span>
+    </div>
+    <div class="field">
+      <label for="response_type">Allowed response types</label>
+      <textarea
+        id="response_type"
+        name="response_type"
+        placeholder="code"
+      ></textarea>
+      <span class="hint"
+        >One response type per line. Leave empty for machine-only clients.</span
+      >
+    </div>
+    <div class="field">
+      <label for="token_endpoint_auth_method"
+        >Token endpoint authentication</label
+      >
+      <select id="token_endpoint_auth_method" name="token_endpoint_auth_method">
+        <option value="client_secret_basic">Client secret basic</option>
+        <option value="client_secret_post">Client secret post</option>
+        <option value="none">None (public client)</option>
+      </select>
+    </div>
+    <div class="actions">
+      <button class="button" type="submit">Create client</button>
+      <a href="{{ url_for('home') }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

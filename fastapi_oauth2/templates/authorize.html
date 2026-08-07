@@ -1,21 +1,33 @@
-<p>
-  The application <strong>{{grant.client.client_name}}</strong> is requesting:
-  <strong>{{ grant.request.payload.scope }}</strong>
-</p>
+{% extends "base.html" %} {% block title %}Authorize application · OAuth
+Server{% endblock %} {% block content %}
+<section class="card">
+  <p class="eyebrow">Authorization request</p>
+  <h1>Allow {{ grant.client.client_name }}?</h1>
+  <p class="muted">This application is requesting access to your account.</p>
 
-<p>from You - a.k.a. <strong>{{ user.username }}</strong></p>
-
-<form action="" method="post">
-  <label>
-    <input type="checkbox" name="confirm" />
-    <span>Consent?</span>
-  </label>
-  {% if not user %}
-  <p>You haven't logged in. Log in with:</p>
-  <div>
-    <input type="text" name="username" />
+  <div class="notice">
+    <div aria-hidden="true">↗</div>
+    <div>
+      <strong>Requested scopes</strong><br />
+      <span class="scope"
+        >{{ grant.request.payload.scope or "No additional scopes" }}</span
+      >
+    </div>
   </div>
-  {% endif %}
-  <br />
-  <button>Submit</button>
-</form>
+
+  <form action="" method="post" class="consent">
+    <label class="check" for="confirm">
+      <input id="confirm" type="checkbox" name="confirm" required />
+      <span
+        ><strong>I approve this request.</strong><br /><span class="muted"
+          >You are authorizing this application as {{ user.username }}.</span
+        ></span
+      >
+    </label>
+    <div class="actions">
+      <button class="button" type="submit">Continue</button>
+      <a href="{{ url_for('home') }}">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}
