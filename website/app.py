@@ -1,5 +1,7 @@
 import os
+
 from flask import Flask
+
 from .models import db
 from .oauth2 import config_oauth
 from .routes import bp

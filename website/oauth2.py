@@ -3,15 +3,15 @@ from authlib.integrations.flask_oauth2 import (
     ResourceProtector,
 )
 from authlib.integrations.sqla_oauth2 import (
-    create_query_client_func,
-    create_save_token_func,
-    create_revocation_endpoint,
     create_bearer_token_validator,
+    create_query_client_func,
+    create_revocation_endpoint,
+    create_save_token_func,
 )
 from authlib.oauth2.rfc6749 import grants
 from authlib.oauth2.rfc7636 import CodeChallenge
-from .models import db, User
-from .models import OAuth2Client, OAuth2AuthorizationCode, OAuth2Token
+
+from .models import OAuth2AuthorizationCode, OAuth2Client, OAuth2Token, User, db
 
 
 class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
@@ -38,9 +38,7 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
         return auth_code
 
     def query_authorization_code(self, code, client):
-        auth_code = OAuth2AuthorizationCode.query.filter_by(
-            code=code, client_id=client.client_id
-        ).first()
+        auth_code = OAuth2AuthorizationCode.query.filter_by(code=code, client_id=client.client_id).first()
         if auth_code and not auth_code.is_expired():
             return auth_code
 
