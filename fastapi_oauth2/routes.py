@@ -16,6 +16,8 @@ from fastapi_oauth2.dependencies.current_user import CurrentUserDep
 from fastapi_oauth2.dependencies.db_session import DBSessionDep
 from fastapi_oauth2.dependencies.oauth2 import OAuth2ServerDep, TokenClaimsDep, require_scopes
 from fastapi_oauth2.models import OAuth2Client, User
+from fastapi_oauth2.oidc import jwks
+from fastapi_oauth2.settings import Settings
 
 
 logger = logging.getLogger(__name__)
@@ -160,6 +162,31 @@ def revoke_token(request: Request, oauth2_server: OAuth2ServerDep) -> Response:
     return oauth2_server.create_endpoint_response("revocation", request=request)
 
 
+@router.get("/.well-known/openid-configuration")
+def openid_configuration() -> dict[str, t.Any]:
+    issuer = Settings().oidc_issuer.rstrip("/")
+    return {
+        "issuer": issuer,
+        "authorization_endpoint": f"{issuer}/oauth/authorize",
+        "token_endpoint": f"{issuer}/oauth/token",
+        "userinfo_endpoint": f"{issuer}/oauth/userinfo",
+        "jwks_uri": f"{issuer}/oauth/jwks",
+        "revocation_endpoint": f"{issuer}/oauth/revoke",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"],
+        "scopes_supported": ["openid", "profile", "user:read", "machine:read"],
+        "token_endpoint_auth_methods_supported": ["client_secret_basic", "none"],
+        "code_challenge_methods_supported": ["S256"],
+    }
+
+
+@router.get("/oauth/jwks")
+def openid_jwks() -> dict[str, list[dict[str, str]]]:
+    return jwks(Settings())
+
+
 @router.get(
     "/whoami",
     dependencies=[
@@ -167,7 +194,7 @@ def revoke_token(request: Request, oauth2_server: OAuth2ServerDep) -> Response:
     ],
 )
 def whoami(claims: TokenClaimsDep, session: DBSessionDep) -> dict[str, t.Any]:
-    if claims.sub is None:
+    if claims.type != "access_token" or claims.sub is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Machine tokens cannot access user resources")
     user = session.get(User, int(claims.sub))
     if user is None:
@@ -181,6 +208,22 @@ def whoami(claims: TokenClaimsDep, session: DBSessionDep) -> dict[str, t.Any]:
     dependencies=[Security(require_scopes, scopes=["machine:read"])],
 )
 def machine_whoami(claims: TokenClaimsDep) -> dict[str, str]:
-    if claims.sub is not None:
+    if claims.type != "access_token" or claims.sub is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "User tokens cannot access machine resources")
     return {"client_id": claims.client_id}
+
+
+@router.get(
+    "/oauth/userinfo",
+    dependencies=[Security(require_scopes, scopes=["openid"])],
+)
+def userinfo(claims: TokenClaimsDep, session: DBSessionDep) -> dict[str, str]:
+    if claims.type != "access_token" or claims.sub is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "An OpenID Connect access token is required")
+    user = session.get(User, int(claims.sub))
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unknown subject")
+    result = {"sub": str(user.id)}
+    if "profile" in claims.scope.split():
+        result["preferred_username"] = user.username
+    return result

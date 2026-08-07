@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, scoped_session
 
 from fastapi_oauth2.models import OAuth2AuthorizationCode, OAuth2Client, OAuth2Token, User
+from fastapi_oauth2.oidc import create_id_token
 from fastapi_oauth2.settings import Settings
 
 
@@ -200,6 +201,7 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
             user_id=request.user.id,
             code_challenge=code_challenge,
             code_challenge_method=code_challenge_method,
+            nonce=request.payload.data.get("nonce"),
         )
         self.server.session.add(auth_code)
         self.server.session.commit()
@@ -219,6 +221,20 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
 
     def authenticate_user(self, authorization_code: OAuth2AuthorizationCode) -> User | None:
         return self.server.session.get(User, authorization_code.user_id)
+
+    def create_token_response(self) -> tuple[int, dict[str, t.Any], list[tuple[str, str]]]:
+        authorization_code = self.request.authorization_code
+        user = self.authenticate_user(authorization_code)
+        status, token, headers = super().create_token_response()
+        if "openid" in authorization_code.scope.split() and user is not None:
+            token["id_token"] = create_id_token(
+                client=self.request.client,
+                user=user,
+                scope=authorization_code.scope,
+                nonce=authorization_code.nonce,
+                auth_time=authorization_code.auth_time,
+            )
+        return status, token, headers
 
 
 class PasswordGrant(grants.ResourceOwnerPasswordCredentialsGrant):

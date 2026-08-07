@@ -32,12 +32,7 @@ class SQLAlchemy:
         if cls.engine is not None:
             return
 
-        engine_options = {
-            "url": settings.sqlalchemy_database_uri,
-            "echo": settings.sqlalchemy_echo,
-            "echo_pool": settings.sqlalchemy_echo,
-        }
-        cls.engine = engine_from_config(engine_options, prefix="")
+        cls.engine = engine_from_config({"url": settings.sqlalchemy_database_uri}, prefix="")
         cls.factory.configure(bind=cls.engine)
 
 

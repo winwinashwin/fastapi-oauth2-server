@@ -2,13 +2,18 @@
 
 import base64
 import hashlib
+import json
 import re
 import time
 import typing as t
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx2
+import jwt
+import jwt.algorithms
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
 
@@ -20,6 +25,15 @@ def browser(tmp_path_factory: pytest.TempPathFactory) -> t.Iterator[TestClient]:
     database = tmp_path_factory.mktemp("oauth") / "oauth.sqlite"
     pytest.MonkeyPatch().setenv("SECRET_KEY", "a" * 36)
     pytest.MonkeyPatch().setenv("SQLALCHEMY_DATABASE_URI", f"sqlite:///{database}")
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_key = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption(),
+    ).decode()
+    pytest.MonkeyPatch().setenv("OIDC_ISSUER", "https://server.example.test")
+    pytest.MonkeyPatch().setenv("OIDC_PRIVATE_KEY_PEM", private_key)
+    pytest.MonkeyPatch().setenv("OIDC_KEY_ID", "test-key")
 
     from fastapi_oauth2.asgi import create_app
 
@@ -85,6 +99,7 @@ def authorize(
     state: str = "state-value",
     code_verifier: str | None = None,
     response_type: str = "code",
+    scope: str = "user:read",
     extra: list[tuple[str, str]] | None = None,
 ) -> httpx2.Response:
     code_verifier = code_verifier or verifier()
@@ -92,7 +107,7 @@ def authorize(
         ("response_type", response_type),
         ("client_id", client["client_id"]),
         ("redirect_uri", redirect_uri),
-        ("scope", "user:read"),
+        ("scope", scope),
         ("state", state),
         ("code_challenge", challenge(code_verifier)),
         ("code_challenge_method", "S256"),
@@ -332,3 +347,68 @@ def test_machine_credentials_receive_only_machine_scope(browser: TestClient) -> 
     assert identity.status_code == 200
     assert identity.json() == {"client_id": client["client_id"]}
     assert browser.get("/whoami", headers=bearer).status_code == 403
+
+
+def test_openid_code_flow_returns_a_verifiable_id_token_and_userinfo(browser: TestClient) -> None:
+    client = create_client(
+        browser,
+        name="oidc-client",
+        grant_types="authorization_code",
+        scope="openid profile",
+    )
+    nonce = "nonce-value"
+    code = authorization_code(
+        authorize(
+            browser,
+            client,
+            scope="openid profile",
+            extra=[("nonce", nonce)],
+        )
+    )
+    response = exchange(browser, client, code, code_verifier=verifier())
+    assert response.status_code == 200
+    tokens = response.json()
+    jwks = browser.get("/oauth/jwks").json()
+    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwks["keys"][0]))
+    claims = jwt.decode(
+        tokens["id_token"],
+        public_key,
+        algorithms=["RS256"],
+        audience=client["client_id"],
+        issuer="https://server.example.test",
+    )
+    assert claims["nonce"] == nonce
+    assert claims["preferred_username"] == "oidc-client"
+    assert {"iss", "sub", "aud", "exp", "iat", "auth_time", "jti"} <= claims.keys()
+
+    userinfo = browser.get("/oauth/userinfo", headers={"Authorization": f"Bearer {tokens['access_token']}"})
+    assert userinfo.status_code == 200
+    assert userinfo.json() == {"sub": claims["sub"], "preferred_username": "oidc-client"}
+
+
+@pytest.mark.parametrize("extra", [[], [("nonce", "one"), ("nonce", "two")]])
+def test_openid_requests_require_exactly_one_nonce(browser: TestClient, extra: list[tuple[str, str]]) -> None:
+    client = create_client(
+        browser,
+        name=f"oidc-nonce-{len(extra)}",
+        grant_types="authorization_code",
+        scope="openid",
+    )
+    response = authorize(browser, client, scope="openid", extra=extra)
+    assert response.status_code in {302, 400}
+    if response.status_code == 302:
+        assert parse_qs(urlparse(response.headers["location"]).query)["error"] == ["invalid_request"]
+    else:
+        assert response.json()["error"] == "invalid_request"
+
+
+def test_openid_discovery_and_userinfo_reject_non_oidc_tokens(browser: TestClient, code_client: dict[str, str]) -> None:
+    discovery = browser.get("/.well-known/openid-configuration")
+    assert discovery.status_code == 200
+    assert discovery.json()["issuer"] == "https://server.example.test"
+    assert discovery.json()["jwks_uri"] == "https://server.example.test/oauth/jwks"
+    assert browser.get("/oauth/jwks").json()["keys"][0]["alg"] == "RS256"
+
+    code = authorization_code(authorize(browser, code_client))
+    access_token = exchange(browser, code_client, code, code_verifier=verifier()).json()["access_token"]
+    assert browser.get("/oauth/userinfo", headers={"Authorization": f"Bearer {access_token}"}).status_code == 403

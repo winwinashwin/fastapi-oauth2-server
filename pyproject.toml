@@ -10,7 +10,7 @@ dependencies = [
     "uvicorn[standard]",
     "starlette[full]",
     "pydantic-settings",
-    "pyjwt",
+    "pyjwt[crypto]",
     "anyio>=4",
     "SQLAlchemy>=2",
 ]

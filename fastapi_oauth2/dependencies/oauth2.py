@@ -38,17 +38,31 @@ class S256CodeChallenge(CodeChallenge):
         super().validate_code_challenge(grant, redirect_uri)
 
 
+class OIDCNonce:
+    def __call__(self, grant: AuthorizationCodeGrant) -> None:
+        grant.register_hook("after_validate_authorization_request_payload", self.validate_nonce)
+
+    @staticmethod
+    def validate_nonce(grant: AuthorizationCodeGrant, redirect_uri: str) -> None:
+        request: FastAPIOAuth2Request = grant.request
+        if "openid" not in (request.payload.scope or "").split():
+            return
+        nonces = request.payload.datalist.get("nonce", [])
+        if len(nonces) != 1 or not nonces[0] or len(nonces[0]) > 255:
+            raise InvalidRequestError("A single nonce is required for OpenID Connect")
+
+
 def get_oauth_server(session: DBSessionDep) -> AuthorizationServer:
     query_client = create_query_client_func(session, OAuth2Client)
     save_token = create_save_token_func(session, OAuth2Token)
     server = AuthorizationServer(
-        scopes_supported=["user:read", "machine:read"],
+        scopes_supported=["openid", "profile", "user:read", "machine:read"],
         query_client=query_client,
         save_token=save_token,
         session=session,
     )
     # support all grants
-    server.register_grant(AuthorizationCodeGrant, [S256CodeChallenge(required=True)])
+    server.register_grant(AuthorizationCodeGrant, [S256CodeChallenge(required=True), OIDCNonce()])
     server.register_grant(RefreshTokenGrant)
     server.register_grant(grants.ClientCredentialsGrant)
     # server.register_grant(grants.ImplicitGrant) # Used by old browsers/SPAs, generally not recommended
@@ -67,6 +81,8 @@ OAuth2ServerDep = t.Annotated[AuthorizationServer, Depends(get_oauth_server)]
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/oauth/token",
     scopes={
+        "openid": "OpenID Connect authentication",
+        "profile": "Read basic profile information",
         "user:read": "Read user information",
     },
 )
@@ -76,6 +92,7 @@ class TokenClaims(BaseModel):
     sub: str | None = None
     client_id: str
     scope: str = ""
+    type: str
 
 
 def get_token_claims(token: t.Annotated[str, Depends(oauth2_scheme)]) -> TokenClaims:
