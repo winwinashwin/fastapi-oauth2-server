@@ -55,6 +55,9 @@ class FastAPIOAuth2Payload(OAuth2Payload):
 class FastAPIOAuth2Request(OAuth2Request):
     _request: Request
     payload: FastAPIOAuth2Payload
+    client: OAuth2Client
+    user: User
+    authorization_code: OAuth2AuthorizationCode
 
     def __init__(self, request: Request) -> None:
         super().__init__(method=request.method, uri=str(request.url), headers=request.headers)

@@ -1,5 +1,7 @@
 """HTTP-level security contract tests for the example OAuth 2.0 provider."""
 
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
+
 import base64
 import hashlib
 import json
@@ -381,7 +383,8 @@ def test_openid_code_flow_returns_a_verifiable_id_token_and_userinfo(browser: Te
     assert response.status_code == 200
     tokens = response.json()
     jwks = browser.get("/oauth/jwks").json()
-    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwks["keys"][0]))
+    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(jwks["keys"][0])
+    assert isinstance(public_key, RSAPublicKey), "Expected public key to be resolved"
     claims = jwt.decode(
         tokens["id_token"],
         public_key,

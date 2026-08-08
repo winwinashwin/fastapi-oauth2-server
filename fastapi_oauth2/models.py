@@ -60,21 +60,29 @@ class User(BaseModel):
 class OAuth2Client(BaseModel, OAuth2ClientMixin):
     __tablename__ = "oauth2_client"
 
-    user_id = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
+    client_secret: Mapped[str]
+
+    user_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
     user: Mapped[User] = relationship("User")
 
 
 class OAuth2AuthorizationCode(BaseModel, OAuth2AuthorizationCodeMixin):
     __tablename__ = "oauth2_code"
 
-    user_id = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
+    scope: Mapped[str]
+    nonce: Mapped[str]
+    auth_time: Mapped[int]
+
+    user_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
     user: Mapped[User] = relationship("User")
 
 
 class OAuth2Token(BaseModel, OAuth2TokenMixin):
     __tablename__ = "oauth2_token"
 
-    user_id = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
+    refresh_token_revoked_at: Mapped[int]
+
+    user_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
     user: Mapped[User] = relationship("User")
 
     def is_refresh_token_active(self) -> bool:

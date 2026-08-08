@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["prek", "ruff", "pytest", "httpx2"]
+dev = ["prek", "ruff", "ty", "pytest", "httpx2"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -24,3 +24,6 @@ anyio_mode = "auto"
 
 [tool.fastapi]
 entrypoint = "fastapi_oauth2.asgi:create_app"
+
+[tool.ty.environment]
+python-platform = "all"
