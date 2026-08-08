@@ -30,7 +30,7 @@ templates = Jinja2Templates(directory="fastapi_oauth2/templates")
 def create_session(
     request: Request,
     session: DBSessionDep,
-    next: t.Annotated[str | None, Query()] = None,
+    next_page: t.Annotated[str | None, Query(alias="next")] = None,
     username: t.Annotated[str | None, Form()] = None,
 ) -> RedirectResponse:
     """Create a local browser session for the supplied username."""
@@ -41,8 +41,8 @@ def create_session(
         session.commit()
     request.session["id"] = user.id
     # if user is not just to log in, but need to head back to the auth page, then go for it
-    if next:
-        return RedirectResponse(next, status_code=status.HTTP_302_FOUND)
+    if next_page:
+        return RedirectResponse(next_page, status_code=status.HTTP_302_FOUND)
     return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
 
 

@@ -105,8 +105,8 @@ def get_token_claims(token: t.Annotated[str, Depends(oauth2_scheme)]) -> TokenCl
             options={"verify_aud": False},
         )
         return TokenClaims.model_validate(payload)
-    except (jwt.InvalidTokenError, ValidationError):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid access token")
+    except (jwt.InvalidTokenError, ValidationError) as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid access token") from exc
 
 
 TokenClaimsDep = t.Annotated[TokenClaims, Depends(get_token_claims)]

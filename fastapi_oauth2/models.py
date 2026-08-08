@@ -91,7 +91,8 @@ class OAuth2Token(BaseModel, OAuth2TokenMixin):
 
 @compiles(CreateTable)
 def compile_create_table(element: CreateTable, compiler: DDLCompiler) -> str:
-    """
+    """Add AUTOINCREMENT to primary key in sqlite.
+
     By default primary_key in sqlite does not use autoincrement.
     https://www.sqlite.org/autoinc.html
     sqlite_autoincrement has to be explicitly added for a table to treat it as autoincrement

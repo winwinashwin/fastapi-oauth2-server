@@ -1,10 +1,7 @@
 """HTTP-level security contract tests for the example OAuth 2.0 provider."""
 
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
-
 import base64
 import hashlib
-import json
 import re
 import time
 import typing as t
@@ -16,6 +13,7 @@ import jwt.algorithms
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from fastapi.testclient import TestClient
 
 
