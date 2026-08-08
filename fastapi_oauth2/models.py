@@ -62,8 +62,8 @@ class OAuth2Client(BaseModel, OAuth2ClientMixin):
 
     client_secret: Mapped[str]
 
-    user_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
-    user: Mapped[User] = relationship("User")
+    user_id: Mapped[int | None] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
+    user: Mapped[User | None] = relationship("User")
 
 
 class OAuth2AuthorizationCode(BaseModel, OAuth2AuthorizationCodeMixin):
@@ -73,8 +73,8 @@ class OAuth2AuthorizationCode(BaseModel, OAuth2AuthorizationCodeMixin):
     nonce: Mapped[str]
     auth_time: Mapped[int]
 
-    user_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
-    user: Mapped[User] = relationship("User")
+    user_id: Mapped[int | None] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
+    user: Mapped[User | None] = relationship("User")
 
 
 class OAuth2Token(BaseModel, OAuth2TokenMixin):
@@ -82,8 +82,8 @@ class OAuth2Token(BaseModel, OAuth2TokenMixin):
 
     refresh_token_revoked_at: Mapped[int]
 
-    user_id: Mapped[int] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
-    user: Mapped[User] = relationship("User")
+    user_id: Mapped[int | None] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
+    user: Mapped[User | None] = relationship("User")
 
     def is_refresh_token_active(self) -> bool:
         return not self.is_revoked() and not self.is_expired()
