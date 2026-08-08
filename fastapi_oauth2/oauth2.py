@@ -122,7 +122,7 @@ class Generators:
             "iat": now,
             "nbf": now,
             "sub": str(user.id),
-            "exp": now + datetime.timedelta(seconds=Generators.expires_generator(client, grant_type)),
+            "exp": now + datetime.timedelta(seconds=settings.refresh_token_expires_in),
             "aud": [client.client_id],
             "scope": scope,
             "type": "refresh_token",
@@ -131,7 +131,8 @@ class Generators:
 
     @staticmethod
     def expires_generator(client: OAuth2Client, grant_type: str) -> int:
-        return BearerTokenGenerator.GRANT_TYPES_EXPIRES_IN.get(grant_type, BearerTokenGenerator.DEFAULT_EXPIRES_IN)
+        settings = Settings()
+        return settings.grant_types_expiry_conf.get(grant_type, BearerTokenGenerator.DEFAULT_EXPIRES_IN)
 
 
 class AuthorizationServer(_AuthorizationServer):
@@ -258,9 +259,23 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
         token = self.server.session.scalars(
             sa.select(OAuth2Token).filter_by(refresh_token=refresh_token).limit(1)
         ).first()
-        if token and token.is_refresh_token_active():
-            return token
-        return None
+
+        if not token or token.is_revoked():
+            return None
+
+        settings = Settings()
+        try:
+            jwt.decode(
+                token.refresh_token,
+                settings.secret_key,
+                algorithms=["HS256"],
+                # NOTE: authlib separately verifies that token.client_id = request.client_id.
+                #       The audience check here is for added safety.
+                audience=[token.client_id],
+            )
+        except jwt.InvalidTokenError:
+            return None
+        return token
 
     def authenticate_user(self, refresh_token: OAuth2Token) -> User | None:
         return self.server.session.get(User, refresh_token.user_id)

@@ -1,5 +1,6 @@
 import typing as t
 
+import anyio.to_thread
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -30,7 +31,7 @@ class DBSessionMiddleware:
             try:
                 await self.app(scope, receive, send)
             finally:
-                SQLAlchemy.session.remove()
+                await anyio.to_thread.run_sync(SQLAlchemy.session.remove)
 
 
 def create_app() -> FastAPI:

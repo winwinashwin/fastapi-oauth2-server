@@ -80,13 +80,12 @@ class OAuth2AuthorizationCode(BaseModel, OAuth2AuthorizationCodeMixin):
 class OAuth2Token(BaseModel, OAuth2TokenMixin):
     __tablename__ = "oauth2_token"
 
+    refresh_token: Mapped[str]
     refresh_token_revoked_at: Mapped[int]
+    client_id: Mapped[str]
 
     user_id: Mapped[int | None] = mapped_column(sa.Integer, sa.ForeignKey("user.id", ondelete="CASCADE"))
     user: Mapped[User | None] = relationship("User")
-
-    def is_refresh_token_active(self) -> bool:
-        return not self.is_revoked() and not self.is_expired()
 
 
 @compiles(CreateTable)
