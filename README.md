@@ -56,7 +56,7 @@ Use an HTTPS issuer and protect the private key in every non-local environment. 
 ## Run the server
 
 ```bash
-uv run uvicorn app:app --reload
+uv run uvicorn fastapi_oauth2.asgi:create_app --factory
 ```
 
 On startup the application creates its database tables. Open <http://127.0.0.1:8000/> to create a local user and OAuth client. The example's password flow is intentionally absent; entering a username through the page creates and signs in that user.
