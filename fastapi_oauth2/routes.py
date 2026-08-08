@@ -3,10 +3,9 @@ import secrets
 import time
 import typing as t
 
-import anyio.from_thread
 import sqlalchemy as sa
 from authlib.oauth2 import OAuth2Error
-from fastapi import APIRouter, Form, HTTPException, Request, Response, Security, status
+from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, Security, status
 from fastapi.datastructures import URL
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -27,10 +26,14 @@ router = APIRouter()
 templates = Jinja2Templates(directory="fastapi_oauth2/templates")
 
 
-@router.post("/")
-def create_homepage_for_user(request: Request, session: DBSessionDep) -> RedirectResponse:
-    form_data = anyio.from_thread.run(request.form)
-    username = form_data.get("username")
+@router.post("/sessions")
+def create_session(
+    request: Request,
+    session: DBSessionDep,
+    next: t.Annotated[str | None, Query()] = None,
+    username: t.Annotated[str | None, Form()] = None,
+) -> RedirectResponse:
+    """Create a local browser session for the supplied username."""
     user = session.scalars(sa.select(User).filter_by(username=username).limit(1)).first()
     if not user:
         user = User(username=username)
@@ -38,14 +41,14 @@ def create_homepage_for_user(request: Request, session: DBSessionDep) -> Redirec
         session.commit()
     request.session["id"] = user.id
     # if user is not just to log in, but need to head back to the auth page, then go for it
-    next_page = request.query_params.get("next")
-    if next_page:
-        return RedirectResponse(next_page, status_code=status.HTTP_302_FOUND)
+    if next:
+        return RedirectResponse(next, status_code=status.HTTP_302_FOUND)
     return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
 
 
 @router.get("/")
-def home(request: Request, session: DBSessionDep, user: CurrentUserDep) -> HTMLResponse:
+def show_dashboard(request: Request, session: DBSessionDep, user: CurrentUserDep) -> HTMLResponse:
+    """Render the local user's OAuth client dashboard."""
     clients = session.scalars(sa.select(OAuth2Client).filter_by(user_id=user.id)).all() if user else []
     return templates.TemplateResponse(
         request=request,
@@ -54,15 +57,16 @@ def home(request: Request, session: DBSessionDep, user: CurrentUserDep) -> HTMLR
     )
 
 
-@router.get("/logout")
-@router.post("/logout")
-def logout(request: Request) -> RedirectResponse:
-    del request.session["id"]
+@router.post("/sessions/current")
+def delete_current_session(request: Request) -> RedirectResponse:
+    """End the current local browser session."""
+    request.session.pop("id", None)
     return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
 
 
-@router.get("/create_client")
-def create_client_form(request: Request, user: CurrentUserDep) -> Response:
+@router.get("/clients/new")
+def show_client_registration_form(request: Request, user: CurrentUserDep) -> Response:
+    """Render the OAuth client registration form for the signed-in user."""
     if not user:
         return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(request=request, name="create_client.html")
@@ -82,13 +86,13 @@ def split_by_crlf(s: str) -> list[str]:
     return [v for v in s.splitlines() if v]
 
 
-@router.post("/create_client")
+@router.post("/clients")
 def create_client(
-    request: Request,
     user: CurrentUserDep,
     session: DBSessionDep,
     form_data: t.Annotated[CreateClientForm, Form()],
 ) -> Response:
+    """Register an OAuth client owned by the signed-in user."""
 
     if not user:
         return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
@@ -122,48 +126,55 @@ def create_client(
 
 
 @router.get("/oauth/authorize")
-@router.post("/oauth/authorize")
-def authorize(
+def show_authorization_consent(
     request: Request,
     user: CurrentUserDep,
-    session: DBSessionDep,
     oauth2_server: OAuth2ServerDep,
 ) -> Response:
+    """Validate an authorization request and show its consent screen."""
+    if not user:
+        return RedirectResponse(URL("/").replace_query_params(next=str(request.url)), status_code=status.HTTP_302_FOUND)
+
+    try:
+        grant = oauth2_server.get_consent_grant(request=request, end_user=user)
+    except OAuth2Error as error:
+        return oauth2_server.handle_error_response(request, error)
+
+    return templates.TemplateResponse(request=request, name="authorize.html", context={"user": user, "grant": grant})
+
+
+@router.post("/oauth/authorize")
+def complete_authorization(
+    request: Request,
+    user: CurrentUserDep,
+    oauth2_server: OAuth2ServerDep,
+    confirm: t.Annotated[str | None, Form()] = None,
+) -> Response:
+    """Complete an OAuth authorization request after user consent."""
     # if user log status is not true (Auth server), then to log it in
     if not user:
         return RedirectResponse(URL("/").replace_query_params(next=str(request.url)), status_code=status.HTTP_302_FOUND)
-    if request.method == "GET":
-        try:
-            grant = oauth2_server.get_consent_grant(request=request, end_user=user)
-        except OAuth2Error as error:
-            return oauth2_server.handle_error_response(request, error)
-
-        return templates.TemplateResponse(
-            request=request, name="authorize.html", context={"user": user, "grant": grant}
-        )
-
-    form_data = anyio.from_thread.run(request.form)
-    if not user and "username" in form_data:
-        username = form_data["username"]
-        user = session.scalars(sa.select(User).filter_by(username=username).limit(1)).first()
 
     grant = oauth2_server.get_authorization_grant(oauth2_server.create_oauth2_request(request))
-    grant_user = user if form_data["confirm"] else None
+    grant_user = user if confirm else None
     return oauth2_server.create_authorization_response(request=request, grant=grant, grant_user=grant_user)
 
 
 @router.post("/oauth/token")
-def issue_token(request: Request, oauth2_server: OAuth2ServerDep) -> Response:
+def create_token_response(request: Request, oauth2_server: OAuth2ServerDep) -> Response:
+    """Issue OAuth tokens for a valid grant request."""
     return oauth2_server.create_token_response(request=request)
 
 
 @router.post("/oauth/revoke")
 def revoke_token(request: Request, oauth2_server: OAuth2ServerDep) -> Response:
+    """Revoke an OAuth token using the RFC 7009 revocation endpoint."""
     return oauth2_server.create_endpoint_response("revocation", request=request)
 
 
 @router.get("/.well-known/openid-configuration")
-def openid_configuration() -> dict[str, t.Any]:
+def get_openid_configuration() -> dict[str, t.Any]:
+    """Return the OpenID Connect discovery document."""
     issuer = Settings().oidc_issuer.rstrip("/")
     return {
         "issuer": issuer,
@@ -183,17 +194,19 @@ def openid_configuration() -> dict[str, t.Any]:
 
 
 @router.get("/oauth/jwks")
-def openid_jwks() -> dict[str, list[dict[str, str]]]:
+def get_json_web_key_set() -> dict[str, list[dict[str, str]]]:
+    """Return public keys used to verify this issuer's ID tokens."""
     return jwks(Settings())
 
 
 @router.get(
-    "/whoami",
+    "/users/me",
     dependencies=[
         Security(require_scopes, scopes=["user:read"]),
     ],
 )
-def whoami(claims: TokenClaimsDep, session: DBSessionDep) -> dict[str, t.Any]:
+def get_current_user(claims: TokenClaimsDep, session: DBSessionDep) -> dict[str, t.Any]:
+    """Return the user represented by a user-scoped access token."""
     if claims.type != "access_token" or claims.sub is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Machine tokens cannot access user resources")
     user = session.get(User, int(claims.sub))
@@ -204,10 +217,11 @@ def whoami(claims: TokenClaimsDep, session: DBSessionDep) -> dict[str, t.Any]:
 
 
 @router.get(
-    "/machine/whoami",
+    "/clients/me",
     dependencies=[Security(require_scopes, scopes=["machine:read"])],
 )
-def machine_whoami(claims: TokenClaimsDep) -> dict[str, str]:
+def get_current_client(claims: TokenClaimsDep) -> dict[str, str]:
+    """Return the OAuth client represented by a machine access token."""
     if claims.type != "access_token" or claims.sub is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "User tokens cannot access machine resources")
     return {"client_id": claims.client_id}
@@ -217,7 +231,8 @@ def machine_whoami(claims: TokenClaimsDep) -> dict[str, str]:
     "/oauth/userinfo",
     dependencies=[Security(require_scopes, scopes=["openid"])],
 )
-def userinfo(claims: TokenClaimsDep, session: DBSessionDep) -> dict[str, str]:
+def get_userinfo(claims: TokenClaimsDep, session: DBSessionDep) -> dict[str, str]:
+    """Return OpenID Connect claims for the authenticated subject."""
     if claims.type != "access_token" or claims.sub is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "An OpenID Connect access token is required")
     user = session.get(User, int(claims.sub))

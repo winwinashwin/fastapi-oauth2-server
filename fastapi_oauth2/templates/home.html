@@ -7,8 +7,12 @@ content %} {% if user %}
     Manage the OAuth applications owned by this local account.
   </p>
   <div class="actions">
-    <a class="button" href="{{ url_for('create_client') }}">Create client</a>
-    <a href="{{ url_for('logout') }}">Log out</a>
+    <a class="button" href="{{ url_for('show_client_registration_form') }}"
+      >Create client</a
+    >
+    <form action="{{ url_for('delete_current_session') }}" method="POST">
+      <button class="button button-secondary" type="submit">Log out</button>
+    </form>
   </div>
 </section>
 
@@ -47,7 +51,11 @@ content %} {% if user %}
   <p class="muted">
     Enter a username to create or access a local example account.
   </p>
-  <form action="" method="post" class="form-grid">
+  <form
+    action="{{ url_for('create_session') }}"
+    method="post"
+    class="form-grid"
+  >
     <div class="field">
       <label for="username">Username</label>
       <input

@@ -54,9 +54,9 @@ def create_client(
     redirect_uri: str = REDIRECT_URI,
     response_types: str = "code",
 ) -> dict[str, str]:
-    browser.post("/", data={"username": name})
+    browser.post("/sessions", data={"username": name})
     response = browser.post(
-        "/create_client",
+        "/clients",
         data={
             "client_name": name,
             "client_uri": "https://client.example.test",
@@ -89,6 +89,18 @@ def verifier() -> str:
 
 def challenge(value: str) -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(value.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+
+
+def test_session_routes_create_and_delete_the_browser_session(browser: TestClient) -> None:
+    created = browser.post("/sessions", data={"username": "session-route-user"}, follow_redirects=False)
+    assert created.status_code == 302
+    assert created.headers["location"] == "/"
+    assert "Welcome back, session-route-user" in browser.get("/").text
+
+    deleted = browser.post("/sessions/current", follow_redirects=False)
+    assert deleted.status_code == 302
+    assert deleted.headers["location"] == "/"
+    assert "Sign in to continue" in browser.get("/").text
 
 
 def authorize(
@@ -143,7 +155,7 @@ def test_s256_authorization_code_and_state_survive(browser: TestClient, code_cli
     token = exchange(browser, code_client, parsed["code"][0], code_verifier=verifier())
     assert token.status_code == 200
     assert (
-        browser.get("/whoami", headers={"Authorization": f"Bearer {token.json()['access_token']}"}).status_code == 200
+        browser.get("/users/me", headers={"Authorization": f"Bearer {token.json()['access_token']}"}).status_code == 200
     )
 
 
@@ -343,10 +355,10 @@ def test_machine_credentials_receive_only_machine_scope(browser: TestClient) -> 
     )
     assert token.status_code == 200
     bearer = {"Authorization": f"Bearer {token.json()['access_token']}"}
-    identity = browser.get("/machine/whoami", headers=bearer)
+    identity = browser.get("/clients/me", headers=bearer)
     assert identity.status_code == 200
     assert identity.json() == {"client_id": client["client_id"]}
-    assert browser.get("/whoami", headers=bearer).status_code == 403
+    assert browser.get("/users/me", headers=bearer).status_code == 403
 
 
 def test_openid_code_flow_returns_a_verifiable_id_token_and_userinfo(browser: TestClient) -> None:

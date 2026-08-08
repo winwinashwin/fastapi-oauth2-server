@@ -7,7 +7,7 @@ endblock %} {% block content %}
     Choose the grants, scopes, and callback addresses your application may use.
   </p>
 
-  <form action="" method="post" class="form-grid">
+  <form action="{{ url_for('create_client') }}" method="post" class="form-grid">
     <div class="field">
       <label for="client_name">Client name</label>
       <input
@@ -83,7 +83,7 @@ endblock %} {% block content %}
     </div>
     <div class="actions">
       <button class="button" type="submit">Create client</button>
-      <a href="{{ url_for('home') }}">Cancel</a>
+      <a href="{{ url_for('show_dashboard') }}">Cancel</a>
     </div>
   </form>
 </section>

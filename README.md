@@ -59,7 +59,7 @@ Use an HTTPS issuer and protect the private key in every non-local environment. 
 uv run uvicorn fastapi_oauth2.asgi:create_app --factory
 ```
 
-On startup the application creates its database tables. Open <http://127.0.0.1:8000/> to create a local user and OAuth client. The example's password flow is intentionally absent; entering a username through the page creates and signs in that user.
+On startup the application creates its database tables. Open <http://127.0.0.1:8000/> to create a local user and OAuth client. The example's password flow is intentionally absent; submitting a username to `POST /sessions` creates and signs in that user.
 
 When creating a client, configure the grants, response types, scopes, redirect URIs, and token endpoint authentication method. Use one redirect URI per line. The UI displays the generated client ID and secret after registration.
 
@@ -67,14 +67,19 @@ When creating a client, configure the grants, response types, scopes, redirect U
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
+| `/` | GET | Local OAuth client dashboard |
+| `/sessions` | POST | Create a local browser session |
+| `/sessions/current` | POST | End the current local browser session |
+| `/clients/new` | GET | OAuth client registration form |
+| `/clients` | POST | Register an OAuth client |
 | `/oauth/authorize` | GET, POST | User authorization and consent |
 | `/oauth/token` | POST | Token exchange and client-credentials tokens |
 | `/oauth/revoke` | POST | OAuth token revocation |
 | `/.well-known/openid-configuration` | GET | OIDC discovery document |
 | `/oauth/jwks` | GET | RS256 public signing key set |
 | `/oauth/userinfo` | GET | OIDC UserInfo claims |
-| `/whoami` | GET | Example user resource; requires `user:read` |
-| `/machine/whoami` | GET | Example machine resource; requires `machine:read` |
+| `/users/me` | GET | Example user resource; requires `user:read` |
+| `/clients/me` | GET | Example machine resource; requires `machine:read` |
 
 ## OAuth 2.0 authorization-code flow
 
@@ -151,10 +156,10 @@ Use the resulting access token with the machine resource:
 
 ```bash
 curl -H "Authorization: Bearer $ACCESS_TOKEN" \
-  http://127.0.0.1:8000/machine/whoami
+  http://127.0.0.1:8000/clients/me
 ```
 
-Machine tokens cannot access `/whoami` or `/oauth/userinfo`.
+Machine tokens cannot access `/users/me` or `/oauth/userinfo`.
 
 ## Refresh and revocation
 
